@@ -201,13 +201,20 @@ fileInput.addEventListener('change', handleFileSelection);
 async function handleFileSelection(event) {
     const files = Array.from(event.target.files);
     
+    if (files.length === 0) return;
+    
     // Store the current playing state and time before adding files
     const wasPlaying = isPlaying;
     const currentTime = audioPlayer.currentTime;
     const wasLoaded = currentTrackIndex !== -1;
     
     for (const file of files) {
-        if (file.type.startsWith('audio/')) {
+        // Check file type - on mobile, file.type might be empty, so also check file extension
+        // Based on MDN File API: https://developer.mozilla.org/en-US/docs/Web/API/File
+        const isAudioFile = file.type.startsWith('audio/') || 
+                           /\.(mp3|wav|ogg|aac|m4a|flac|webm|opus)$/i.test(file.name);
+        
+        if (isAudioFile) {
             const url = URL.createObjectURL(file);
             const playlistItem = {
                 name: file.name,
@@ -233,6 +240,7 @@ async function handleFileSelection(event) {
         }
     }
     
+    // Update display immediately so files show up right away on mobile
     updatePlaylistDisplay();
     savePlayerState();
     
@@ -249,9 +257,12 @@ async function handleFileSelection(event) {
         }
     }
     
-    // Clear the file input value to prevent issues on mobile
+    // Clear the file input value after a short delay to prevent issues on mobile
     // This allows the same file to be selected again if needed
-    event.target.value = '';
+    // Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/setTimeout
+    setTimeout(() => {
+        event.target.value = '';
+    }, 100);
 }
 
 // Playlist management
