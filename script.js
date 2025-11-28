@@ -199,6 +199,10 @@ async function restorePlaylist() {
 fileInput.addEventListener('change', handleFileSelection);
 
 async function handleFileSelection(event) {
+    // Prevent default behavior to avoid page reload on mobile
+    // Based on MDN Event.preventDefault(): https://developer.mozilla.org/en-US/docs/Web/API/Event/preventDefault
+    event.preventDefault();
+    
     const files = Array.from(event.target.files);
     
     if (files.length === 0) return;
