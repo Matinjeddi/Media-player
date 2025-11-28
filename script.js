@@ -1,5 +1,6 @@
 // Core elements
 const fileInput = document.getElementById('file-input');
+const streamBtn = document.getElementById('stream-btn');
 const audioPlayer = document.getElementById('audio-player');
 const playlist = document.getElementById('playlist');
 const trackTitle = document.getElementById('track-title');
@@ -54,18 +55,17 @@ function initDB() {
 
 // Save file to IndexedDB
 // Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
-async function saveFileToDB(file, name, duration) {
+async function saveFileToDB(file, name, duration, streamUrl = null) {
     if (!db) await initDB();
     
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
+        // If streamUrl is provided, save stream URL instead of file data
+        if (streamUrl) {
             const fileData = {
                 name: name,
-                type: file.type,
-                data: event.target.result,
+                streamUrl: streamUrl,
                 duration: duration,
-                lastModified: file.lastModified
+                type: 'audio/mpeg' // Default type for stream URLs
             };
             
             const transaction = db.transaction([STORE_NAME], 'readwrite');
@@ -74,9 +74,28 @@ async function saveFileToDB(file, name, duration) {
             
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
-        };
-        reader.onerror = () => reject(reader.error);
-        reader.readAsArrayBuffer(file);
+        } else {
+            // Save local file
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const fileData = {
+                    name: name,
+                    type: file.type,
+                    data: event.target.result,
+                    duration: duration,
+                    lastModified: file.lastModified
+                };
+                
+                const transaction = db.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.add(fileData);
+                
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsArrayBuffer(file);
+        }
     });
 }
 
@@ -173,27 +192,56 @@ async function restorePlaylist() {
         if (savedFiles.length === 0) return;
         
         for (const fileData of savedFiles) {
-            const blob = new Blob([fileData.data], { type: fileData.type });
-            const url = URL.createObjectURL(blob);
-            
-            const playlistItem = {
-                id: fileData.id,
-                name: fileData.name,
-                file: blob,
-                url: url,
-                duration: fileData.duration || 0
-            };
-            
-            // Get duration if not saved
-            if (!playlistItem.duration) {
-                const audio = new Audio(url);
-                audio.addEventListener('loadedmetadata', () => {
-                    playlistItem.duration = audio.duration;
-                    updatePlaylistDisplay();
-                });
+            // Check if this is a stream URL or a local file
+            if (fileData.streamUrl) {
+                // Restore stream URL
+                const playlistItem = {
+                    id: fileData.id,
+                    name: fileData.name,
+                    file: null,
+                    url: fileData.streamUrl,
+                    duration: fileData.duration || 0
+                };
+                
+                // Get duration if not saved
+                if (!playlistItem.duration) {
+                    const audio = new Audio(fileData.streamUrl);
+                    audio.addEventListener('loadedmetadata', () => {
+                        playlistItem.duration = audio.duration;
+                        updatePlaylistDisplay();
+                    });
+                    audio.addEventListener('error', (e) => {
+                        console.error('Error loading stream URL:', e);
+                        updatePlaylistDisplay();
+                    });
+                    audio.load();
+                }
+                
+                playlistItems.push(playlistItem);
+            } else {
+                // Restore local file
+                const blob = new Blob([fileData.data], { type: fileData.type });
+                const url = URL.createObjectURL(blob);
+                
+                const playlistItem = {
+                    id: fileData.id,
+                    name: fileData.name,
+                    file: blob,
+                    url: url,
+                    duration: fileData.duration || 0
+                };
+                
+                // Get duration if not saved
+                if (!playlistItem.duration) {
+                    const audio = new Audio(url);
+                    audio.addEventListener('loadedmetadata', () => {
+                        playlistItem.duration = audio.duration;
+                        updatePlaylistDisplay();
+                    });
+                }
+                
+                playlistItems.push(playlistItem);
             }
-            
-            playlistItems.push(playlistItem);
         }
         
         updatePlaylistDisplay();
@@ -213,6 +261,91 @@ async function restorePlaylist() {
 
 // File input handling
 fileInput.addEventListener('change', handleFileSelection);
+
+// Stream URL handling
+// Based on MDN Window.prompt(): https://developer.mozilla.org/en-US/docs/Web/API/Window/prompt
+streamBtn.addEventListener('click', () => {
+    const url = window.prompt('Enter MP3 stream URL:');
+    if (url && url.trim()) {
+        addStreamUrl(url.trim());
+    }
+});
+
+// Add stream URL to playlist
+// Based on MDN HTMLAudioElement: https://developer.mozilla.org/en-US/docs/Web/API/HTMLAudioElement
+function addStreamUrl(url) {
+    // Basic URL validation
+    try {
+        new URL(url);
+    } catch (error) {
+        alert('Invalid URL. Please enter a valid URL.');
+        return;
+    }
+    
+    // Store the current playing state and time before adding stream
+    const wasPlaying = isPlaying;
+    const currentTime = audioPlayer.currentTime;
+    const wasLoaded = currentTrackIndex !== -1;
+    
+    // Create playlist item for stream URL
+    const playlistItem = {
+        name: url, // Use full URL as name
+        file: null, // Not a local file
+        url: url, // Direct URL, not object URL
+        duration: 0, // Will be loaded asynchronously
+        id: undefined // Not saved to IndexedDB
+    };
+    
+    // Load metadata (duration) asynchronously
+    const audio = new Audio(url);
+    audio.addEventListener('loadedmetadata', async () => {
+        playlistItem.duration = audio.duration;
+        updatePlaylistDisplay();
+        // Save stream URL to IndexedDB after duration is loaded
+        try {
+            const dbId = await saveFileToDB(null, url, audio.duration, url);
+            playlistItem.id = dbId;
+        } catch (error) {
+            console.error('Error saving stream URL to database:', error);
+        }
+    });
+    
+    // Handle errors (CORS, invalid audio, etc.)
+    audio.addEventListener('error', async (e) => {
+        console.error('Error loading stream URL:', e);
+        // Still add to playlist, but duration will remain 0
+        updatePlaylistDisplay();
+        // Save stream URL to IndexedDB even if duration couldn't be loaded
+        try {
+            const dbId = await saveFileToDB(null, url, 0, url);
+            playlistItem.id = dbId;
+        } catch (error) {
+            console.error('Error saving stream URL to database:', error);
+        }
+    });
+    
+    // Preload the audio to trigger metadata loading
+    audio.load();
+    
+    playlistItems.push(playlistItem);
+    
+    // Update display immediately
+    updatePlaylistDisplay();
+    savePlayerState();
+    
+    // Auto-play first track only if no track is currently selected
+    // Don't reload if a track is already playing
+    if (currentTrackIndex === -1 && playlistItems.length > 0) {
+        currentTrackIndex = playlistItems.length - 1;
+        loadTrack(currentTrackIndex);
+    } else if (wasLoaded && wasPlaying) {
+        // Restore playback state if a track was playing
+        audioPlayer.currentTime = currentTime;
+        if (wasPlaying) {
+            playTrack();
+        }
+    }
+}
 
 async function handleFileSelection(event) {
     // Prevent default behavior to avoid page reload on mobile
@@ -343,9 +476,9 @@ async function deletePlaylistItem(index) {
         }
     }
     
-    // Revoke the object URL to free memory
+    // Revoke the object URL to free memory (only for local files, not stream URLs)
     // Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/URL/revokeObjectURL
-    if (item.url) {
+    if (item.url && item.file) {
         URL.revokeObjectURL(item.url);
     }
     
