@@ -80,6 +80,21 @@ async function saveFileToDB(file, name, duration) {
     });
 }
 
+// Delete file from IndexedDB
+// Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/delete
+async function deleteFileFromDB(id) {
+    if (!db) await initDB();
+    
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.delete(id);
+        
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
 // Load all files from IndexedDB
 // Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAll
 async function loadFilesFromDB() {
@@ -162,6 +177,7 @@ async function restorePlaylist() {
             const url = URL.createObjectURL(blob);
             
             const playlistItem = {
+                id: fileData.id,
                 name: fileData.name,
                 file: blob,
                 url: url,
@@ -234,7 +250,8 @@ async function handleFileSelection(event) {
                 updatePlaylistDisplay();
                 // Save file to IndexedDB after duration is loaded
                 try {
-                    await saveFileToDB(file, file.name, audio.duration);
+                    const dbId = await saveFileToDB(file, file.name, audio.duration);
+                    playlistItem.id = dbId;
                 } catch (error) {
                     console.error('Error saving file to database:', error);
                 }
@@ -289,9 +306,16 @@ function updatePlaylistDisplay() {
             <span class="playlist-item-number">${index + 1}</span>
             <span class="playlist-item-name">${item.name}</span>
             <span class="playlist-item-duration">${formatTime(item.duration)}</span>
+            <button class="delete-btn" title="Delete">🗑️</button>
         `;
         
-        playlistItem.addEventListener('click', () => {
+        playlistItem.addEventListener('click', (e) => {
+            // Don't trigger track selection if delete button is clicked
+            if (e.target.classList.contains('delete-btn') || e.target.closest('.delete-btn')) {
+                e.stopPropagation();
+                deletePlaylistItem(index);
+                return;
+            }
             currentTrackIndex = index;
             loadTrack(index);
             playTrack();
@@ -299,6 +323,64 @@ function updatePlaylistDisplay() {
         
         playlist.appendChild(playlistItem);
     });
+}
+
+// Delete playlist item
+// Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/delete
+async function deletePlaylistItem(index) {
+    if (index < 0 || index >= playlistItems.length) return;
+    
+    const item = playlistItems[index];
+    const wasCurrentTrack = index === currentTrackIndex;
+    const wasPlaying = isPlaying;
+    
+    // Delete from IndexedDB if it has an ID
+    if (item.id) {
+        try {
+            await deleteFileFromDB(item.id);
+        } catch (error) {
+            console.error('Error deleting file from database:', error);
+        }
+    }
+    
+    // Revoke the object URL to free memory
+    // Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/URL/revokeObjectURL
+    if (item.url) {
+        URL.revokeObjectURL(item.url);
+    }
+    
+    // Remove from array
+    playlistItems.splice(index, 1);
+    
+    // Adjust current track index if needed
+    if (wasCurrentTrack) {
+        if (playlistItems.length === 0) {
+            currentTrackIndex = -1;
+            audioPlayer.src = '';
+            trackTitle.textContent = 'No track selected';
+            trackTime.textContent = '00:00 / 00:00';
+            progressBar.value = 0;
+            pauseTrack();
+        } else {
+            // If we deleted the last item, move to the new last item
+            if (index >= playlistItems.length) {
+                currentTrackIndex = playlistItems.length - 1;
+            } else {
+                // Otherwise, the next item takes the current index
+                currentTrackIndex = index;
+            }
+            loadTrack(currentTrackIndex);
+            if (wasPlaying && playlistItems.length > 0) {
+                playTrack();
+            }
+        }
+    } else if (index < currentTrackIndex) {
+        // If we deleted an item before the current track, adjust the index
+        currentTrackIndex--;
+    }
+    
+    updatePlaylistDisplay();
+    savePlayerState();
 }
 
 function formatTime(seconds) {
