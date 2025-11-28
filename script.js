@@ -31,6 +31,11 @@ fileInput.addEventListener('change', handleFileSelection);
 function handleFileSelection(event) {
     const files = Array.from(event.target.files);
     
+    // Store the current playing state and time before adding files
+    const wasPlaying = isPlaying;
+    const currentTime = audioPlayer.currentTime;
+    const wasLoaded = currentTrackIndex !== -1;
+    
     files.forEach(file => {
         if (file.type.startsWith('audio/')) {
             const url = URL.createObjectURL(file);
@@ -54,11 +59,22 @@ function handleFileSelection(event) {
     
     updatePlaylistDisplay();
     
-    // Auto-play first track if no track is currently selected
+    // Auto-play first track only if no track is currently selected
+    // Don't reload if a track is already playing
     if (currentTrackIndex === -1 && playlistItems.length > 0) {
         currentTrackIndex = 0;
         loadTrack(0);
+    } else if (wasLoaded && wasPlaying) {
+        // Restore playback state if a track was playing
+        audioPlayer.currentTime = currentTime;
+        if (wasPlaying) {
+            playTrack();
+        }
     }
+    
+    // Clear the file input value to prevent issues on mobile
+    // This allows the same file to be selected again if needed
+    event.target.value = '';
 }
 
 // Playlist management
