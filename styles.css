@@ -350,6 +350,21 @@ header h1 {
     background: rgba(255, 255, 255, 0.2);
 }
 
+.disclaimer {
+    background: #f8f9fa;
+    border-radius: 15px;
+    padding: 20px;
+    margin-top: 20px;
+}
+.disclaimer p {
+    font-size: 0.9em;
+    color: #666;
+}
+
+.disclaimer p strong {
+    color: #333;
+}
+
 @media (max-width: 600px) {
     .container {
         padding: 20px;
