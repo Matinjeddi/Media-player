@@ -25,10 +25,180 @@ let isPlaying = false;
 // Initialize audio player
 audioPlayer.volume = 1.0;
 
+// IndexedDB setup for storing files
+// Based on MDN IndexedDB API: https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API
+const DB_NAME = 'MediaPlayerDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'audioFiles';
+let db = null;
+
+// Initialize IndexedDB
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            db = request.result;
+            resolve(db);
+        };
+        
+        request.onupgradeneeded = (event) => {
+            const database = event.target.result;
+            if (!database.objectStoreNames.contains(STORE_NAME)) {
+                database.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            }
+        };
+    });
+}
+
+// Save file to IndexedDB
+// Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
+async function saveFileToDB(file, name, duration) {
+    if (!db) await initDB();
+    
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const fileData = {
+                name: name,
+                type: file.type,
+                data: event.target.result,
+                duration: duration,
+                lastModified: file.lastModified
+            };
+            
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.add(fileData);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+// Load all files from IndexedDB
+// Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAll
+async function loadFilesFromDB() {
+    if (!db) await initDB();
+    
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
+        
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// Clear all files from IndexedDB
+async function clearFilesFromDB() {
+    if (!db) await initDB();
+    
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.clear();
+        
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// Save player state to localStorage
+// Based on MDN Web Storage API: https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage
+function savePlayerState() {
+    const state = {
+        currentTrackIndex: currentTrackIndex,
+        volume: audioPlayer.volume,
+        isShuffleMode: isShuffleMode,
+        repeatMode: repeatMode,
+        currentTime: audioPlayer.currentTime
+    };
+    localStorage.setItem('playerState', JSON.stringify(state));
+}
+
+// Load player state from localStorage
+function loadPlayerState() {
+    const saved = localStorage.getItem('playerState');
+    if (saved) {
+        const state = JSON.parse(saved);
+        currentTrackIndex = state.currentTrackIndex || -1;
+        audioPlayer.volume = state.volume !== undefined ? state.volume : 1.0;
+        volumeSlider.value = (state.volume !== undefined ? state.volume : 1.0) * 100;
+        volumeValue.textContent = `${Math.round(volumeSlider.value)}%`;
+        isShuffleMode = state.isShuffleMode || false;
+        repeatMode = state.repeatMode || 'off';
+        
+        if (isShuffleMode) {
+            shuffleBtn.classList.add('active');
+        }
+        
+        if (repeatMode === 'all') {
+            repeatBtn.classList.add('active');
+            repeatBtn.title = 'Repeat All';
+        } else if (repeatMode === 'one') {
+            repeatBtn.title = 'Repeat One';
+        }
+        
+        return state;
+    }
+    return null;
+}
+
+// Restore playlist from IndexedDB on page load
+async function restorePlaylist() {
+    try {
+        const savedFiles = await loadFilesFromDB();
+        
+        if (savedFiles.length === 0) return;
+        
+        for (const fileData of savedFiles) {
+            const blob = new Blob([fileData.data], { type: fileData.type });
+            const url = URL.createObjectURL(blob);
+            
+            const playlistItem = {
+                name: fileData.name,
+                file: blob,
+                url: url,
+                duration: fileData.duration || 0
+            };
+            
+            // Get duration if not saved
+            if (!playlistItem.duration) {
+                const audio = new Audio(url);
+                audio.addEventListener('loadedmetadata', () => {
+                    playlistItem.duration = audio.duration;
+                    updatePlaylistDisplay();
+                });
+            }
+            
+            playlistItems.push(playlistItem);
+        }
+        
+        updatePlaylistDisplay();
+        
+        // Restore player state
+        const state = loadPlayerState();
+        if (state && currentTrackIndex >= 0 && currentTrackIndex < playlistItems.length) {
+            loadTrack(currentTrackIndex);
+            if (state.currentTime) {
+                audioPlayer.currentTime = state.currentTime;
+            }
+        }
+    } catch (error) {
+        console.error('Error restoring playlist:', error);
+    }
+}
+
 // File input handling
 fileInput.addEventListener('change', handleFileSelection);
 
-function handleFileSelection(event) {
+async function handleFileSelection(event) {
     const files = Array.from(event.target.files);
     
     // Store the current playing state and time before adding files
@@ -36,7 +206,7 @@ function handleFileSelection(event) {
     const currentTime = audioPlayer.currentTime;
     const wasLoaded = currentTrackIndex !== -1;
     
-    files.forEach(file => {
+    for (const file of files) {
         if (file.type.startsWith('audio/')) {
             const url = URL.createObjectURL(file);
             const playlistItem = {
@@ -48,16 +218,23 @@ function handleFileSelection(event) {
             
             // Get duration
             const audio = new Audio(url);
-            audio.addEventListener('loadedmetadata', () => {
+            audio.addEventListener('loadedmetadata', async () => {
                 playlistItem.duration = audio.duration;
                 updatePlaylistDisplay();
+                // Save file to IndexedDB after duration is loaded
+                try {
+                    await saveFileToDB(file, file.name, audio.duration);
+                } catch (error) {
+                    console.error('Error saving file to database:', error);
+                }
             });
             
             playlistItems.push(playlistItem);
         }
-    });
+    }
     
     updatePlaylistDisplay();
+    savePlayerState();
     
     // Auto-play first track only if no track is currently selected
     // Don't reload if a track is already playing
@@ -128,6 +305,7 @@ function loadTrack(index) {
     updatePlaylistDisplay();
     
     audioPlayer.load();
+    savePlayerState();
 }
 
 function playTrack() {
@@ -212,12 +390,21 @@ function handleNextTrack() {
     playTrack();
 }
 
-// Progress bar
+// Progress bar - throttle state saving
+let lastSaveTime = 0;
+const SAVE_INTERVAL = 2000; // Save every 2 seconds
+
 audioPlayer.addEventListener('timeupdate', () => {
     if (audioPlayer.duration) {
         const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
         progressBar.value = progress;
         trackTime.textContent = `${formatTime(audioPlayer.currentTime)} / ${formatTime(audioPlayer.duration)}`;
+    }
+    // Save state periodically
+    const now = Date.now();
+    if (now - lastSaveTime >= SAVE_INTERVAL) {
+        savePlayerState();
+        lastSaveTime = now;
     }
 });
 
@@ -233,6 +420,7 @@ volumeSlider.addEventListener('input', () => {
     const volume = volumeSlider.value / 100;
     audioPlayer.volume = volume;
     volumeValue.textContent = `${volumeSlider.value}%`;
+    savePlayerState();
 });
 
 // Shuffle mode
@@ -246,6 +434,7 @@ shuffleBtn.addEventListener('click', () => {
             shuffleHistory.push(currentTrackIndex);
         }
     }
+    savePlayerState();
 });
 
 function playRandomTrack() {
@@ -296,6 +485,7 @@ repeatBtn.addEventListener('click', () => {
         repeatBtn.classList.remove('active');
         repeatBtn.title = 'Repeat';
     }
+    savePlayerState();
 });
 
 // Audio player events
@@ -333,5 +523,22 @@ document.addEventListener('keydown', (event) => {
             nextBtn.click();
             break;
     }
+});
+
+// Initialize database and restore playlist on page load
+// Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/Window/load_event
+window.addEventListener('load', async () => {
+    try {
+        await initDB();
+        await restorePlaylist();
+    } catch (error) {
+        console.error('Error initializing database:', error);
+    }
+});
+
+// Save state before page unload
+// Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event
+window.addEventListener('beforeunload', () => {
+    savePlayerState();
 });
 
