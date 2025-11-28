@@ -306,7 +306,7 @@ function updatePlaylistDisplay() {
             <span class="playlist-item-number">${index + 1}</span>
             <span class="playlist-item-name">${item.name}</span>
             <span class="playlist-item-duration">${formatTime(item.duration)}</span>
-            <button class="delete-btn" title="Delete">X</button>
+            <button class="delete-btn" title="Delete">🗑️</button>
         `;
         
         playlistItem.addEventListener('click', (e) => {
