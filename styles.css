@@ -393,5 +393,9 @@ header h1 {
     #volume-slider {
         width: 100px;
     }
+
+    .disclaimer p {
+        font-size: 0.8em;
+    }
 }
 
