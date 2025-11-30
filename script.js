@@ -2,6 +2,9 @@
 const fileInput = document.getElementById('file-input');
 const streamBtn = document.getElementById('stream-btn');
 const audioPlayer = document.getElementById('audio-player');
+const videoPlayer = document.getElementById('video-player');
+const videoContainer = document.getElementById('video-container');
+const fullscreenBtn = document.getElementById('fullscreen-btn');
 const playlist = document.getElementById('playlist');
 const trackTitle = document.getElementById('track-title');
 const trackTime = document.getElementById('track-time');
@@ -22,32 +25,87 @@ let isShuffleMode = false;
 let repeatMode = 'off'; // 'off', 'all', 'one'
 let shuffleHistory = [];
 let isPlaying = false;
+let currentPlayer = audioPlayer; // Track which player is active (audio or video)
 
-// Initialize audio player
+// Initialize players
 audioPlayer.volume = 1.0;
+videoPlayer.volume = 1.0;
 
 // IndexedDB setup for storing files
 // Based on MDN IndexedDB API: https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API
 const DB_NAME = 'MediaPlayerDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'audioFiles';
+const DB_VERSION = 2; // Incremented to support video files
+const STORE_NAME = 'mediaFiles';
+const OLD_STORE_NAME = 'audioFiles'; // Legacy store name
 let db = null;
+
+// Helper function to determine if a file is video
+function isVideoFile(type, name) {
+    return type.startsWith('video/') || /\.(mp4|webm|ogg|ogv|mov|avi|mkv|m4v)$/i.test(name);
+}
+
+// Helper function to determine if a file is audio
+function isAudioFile(type, name) {
+    return type.startsWith('audio/') || /\.(mp3|wav|ogg|aac|m4a|flac|webm|opus)$/i.test(name);
+}
 
 // Initialize IndexedDB
 function initDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
-        
+
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
             db = request.result;
             resolve(db);
         };
-        
+
         request.onupgradeneeded = (event) => {
             const database = event.target.result;
-            if (!database.objectStoreNames.contains(STORE_NAME)) {
-                database.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            const transaction = event.target.transaction;
+
+            console.log('Database upgrade from version', event.oldVersion, 'to', event.newVersion);
+
+            // Migrate from old store to new store (v1 to v2)
+            if (event.oldVersion < 2) {
+                // Step 1: Create new mediaFiles store first
+                if (!database.objectStoreNames.contains(STORE_NAME)) {
+                    database.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                    console.log('Created new store:', STORE_NAME);
+                }
+
+                // Step 2: If old store exists, migrate data
+                if (database.objectStoreNames.contains(OLD_STORE_NAME)) {
+                    console.log('Found old store, migrating data...');
+                    const oldStore = transaction.objectStore(OLD_STORE_NAME);
+                    const newStore = transaction.objectStore(STORE_NAME);
+                    const getAllRequest = oldStore.getAll();
+
+                    getAllRequest.onsuccess = () => {
+                        const oldData = getAllRequest.result;
+                        console.log('Migrating', oldData.length, 'items from old database');
+
+                        oldData.forEach(data => {
+                            // Add mediaType field if missing (default to audio for old data)
+                            if (!data.mediaType) {
+                                data.mediaType = 'audio';
+                            }
+                            // Copy to new store (without the id since it's auto-increment)
+                            const { id, ...dataWithoutId } = data;
+                            newStore.add(dataWithoutId);
+                        });
+
+                        console.log('Migration complete');
+                    };
+
+                    getAllRequest.onerror = () => {
+                        console.error('Error reading old data:', getAllRequest.error);
+                    };
+
+                    // Step 3: Delete old store
+                    database.deleteObjectStore(OLD_STORE_NAME);
+                    console.log('Deleted old store:', OLD_STORE_NAME);
+                }
             }
         };
     });
@@ -55,9 +113,9 @@ function initDB() {
 
 // Save file to IndexedDB
 // Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
-async function saveFileToDB(file, name, duration, streamUrl = null) {
+async function saveFileToDB(file, name, duration, streamUrl = null, mediaType = 'audio') {
     if (!db) await initDB();
-    
+
     return new Promise((resolve, reject) => {
         // If streamUrl is provided, save stream URL instead of file data
         if (streamUrl) {
@@ -65,15 +123,22 @@ async function saveFileToDB(file, name, duration, streamUrl = null) {
                 name: name,
                 streamUrl: streamUrl,
                 duration: duration,
-                type: 'audio/mpeg' // Default type for stream URLs
+                type: 'audio/mpeg', // Default type for stream URLs
+                mediaType: mediaType
             };
-            
+
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.add(fileData);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+
+            request.onsuccess = () => {
+                console.log('Saved stream URL to IndexedDB:', name, 'ID:', request.result);
+                resolve(request.result);
+            };
+            request.onerror = () => {
+                console.error('Error saving stream URL to IndexedDB:', request.error);
+                reject(request.error);
+            };
         } else {
             // Save local file
             const reader = new FileReader();
@@ -83,15 +148,22 @@ async function saveFileToDB(file, name, duration, streamUrl = null) {
                     type: file.type,
                     data: event.target.result,
                     duration: duration,
-                    lastModified: file.lastModified
+                    lastModified: file.lastModified,
+                    mediaType: mediaType
                 };
-                
+
                 const transaction = db.transaction([STORE_NAME], 'readwrite');
                 const store = transaction.objectStore(STORE_NAME);
                 const request = store.add(fileData);
-                
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
+
+                request.onsuccess = () => {
+                    console.log('Saved file to IndexedDB:', name, 'ID:', request.result);
+                    resolve(request.result);
+                };
+                request.onerror = () => {
+                    console.error('Error saving file to IndexedDB:', request.error);
+                    reject(request.error);
+                };
             };
             reader.onerror = () => reject(reader.error);
             reader.readAsArrayBuffer(file);
@@ -118,14 +190,20 @@ async function deleteFileFromDB(id) {
 // Based on MDN: https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAll
 async function loadFilesFromDB() {
     if (!db) await initDB();
-    
+
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([STORE_NAME], 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.getAll();
-        
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+
+        request.onsuccess = () => {
+            console.log('Loaded', request.result.length, 'files from IndexedDB');
+            resolve(request.result);
+        };
+        request.onerror = () => {
+            console.error('Error loading files from IndexedDB:', request.error);
+            reject(request.error);
+        };
     });
 }
 
@@ -187,11 +265,20 @@ function loadPlayerState() {
 // Restore playlist from IndexedDB on page load
 async function restorePlaylist() {
     try {
+        console.log('Restoring playlist from IndexedDB...');
         const savedFiles = await loadFilesFromDB();
-        
-        if (savedFiles.length === 0) return;
+
+        if (savedFiles.length === 0) {
+            console.log('No saved files found');
+            return;
+        }
+
+        console.log('Restoring', savedFiles.length, 'files...');
         
         for (const fileData of savedFiles) {
+            // Determine media type (default to audio for backwards compatibility)
+            const mediaType = fileData.mediaType || 'audio';
+
             // Check if this is a stream URL or a local file
             if (fileData.streamUrl) {
                 // Restore stream URL
@@ -200,58 +287,64 @@ async function restorePlaylist() {
                     name: fileData.name,
                     file: null,
                     url: fileData.streamUrl,
-                    duration: fileData.duration || 0
+                    duration: fileData.duration || 0,
+                    mediaType: mediaType
                 };
-                
+
                 // Get duration if not saved
                 if (!playlistItem.duration) {
-                    const audio = new Audio(fileData.streamUrl);
-                    audio.addEventListener('loadedmetadata', () => {
-                        playlistItem.duration = audio.duration;
+                    const media = mediaType === 'video' ? document.createElement('video') : new Audio();
+                    media.src = fileData.streamUrl;
+                    media.addEventListener('loadedmetadata', () => {
+                        playlistItem.duration = media.duration;
                         updatePlaylistDisplay();
                     });
-                    audio.addEventListener('error', (e) => {
+                    media.addEventListener('error', (e) => {
                         console.error('Error loading stream URL:', e);
                         updatePlaylistDisplay();
                     });
-                    audio.load();
+                    media.load();
                 }
-                
+
                 playlistItems.push(playlistItem);
             } else {
                 // Restore local file
                 const blob = new Blob([fileData.data], { type: fileData.type });
                 const url = URL.createObjectURL(blob);
-                
+
                 const playlistItem = {
                     id: fileData.id,
                     name: fileData.name,
                     file: blob,
                     url: url,
-                    duration: fileData.duration || 0
+                    duration: fileData.duration || 0,
+                    mediaType: mediaType
                 };
-                
+
                 // Get duration if not saved
                 if (!playlistItem.duration) {
-                    const audio = new Audio(url);
-                    audio.addEventListener('loadedmetadata', () => {
-                        playlistItem.duration = audio.duration;
+                    const media = mediaType === 'video' ? document.createElement('video') : new Audio();
+                    media.src = url;
+                    media.addEventListener('loadedmetadata', () => {
+                        playlistItem.duration = media.duration;
                         updatePlaylistDisplay();
                     });
                 }
-                
+
                 playlistItems.push(playlistItem);
             }
         }
         
         updatePlaylistDisplay();
-        
+
+        console.log('Playlist restored successfully. Total items:', playlistItems.length);
+
         // Restore player state
         const state = loadPlayerState();
         if (state && currentTrackIndex >= 0 && currentTrackIndex < playlistItems.length) {
             loadTrack(currentTrackIndex);
             if (state.currentTime) {
-                audioPlayer.currentTime = state.currentTime;
+                currentPlayer.currentTime = state.currentTime;
             }
         }
     } catch (error) {
@@ -265,7 +358,7 @@ fileInput.addEventListener('change', handleFileSelection);
 // Stream URL handling
 // Based on MDN Window.prompt(): https://developer.mozilla.org/en-US/docs/Web/API/Window/prompt
 streamBtn.addEventListener('click', () => {
-    const url = window.prompt('Enter MP3 stream URL:');
+    const url = window.prompt('Enter media stream URL (audio/video):');
     if (url && url.trim()) {
         addStreamUrl(url.trim());
     }
@@ -281,58 +374,64 @@ function addStreamUrl(url) {
         alert('Invalid URL. Please enter a valid URL.');
         return;
     }
-    
+
+    // Detect if URL is likely a video stream based on extension
+    const isVideo = /\.(mp4|webm|ogv|mov|m4v)(\?|$)/i.test(url) || url.includes('video');
+    const mediaType = isVideo ? 'video' : 'audio';
+
     // Store the current playing state and time before adding stream
     const wasPlaying = isPlaying;
-    const currentTime = audioPlayer.currentTime;
+    const currentTime = currentPlayer.currentTime;
     const wasLoaded = currentTrackIndex !== -1;
-    
+
     // Create playlist item for stream URL
     const playlistItem = {
         name: url, // Use full URL as name
         file: null, // Not a local file
         url: url, // Direct URL, not object URL
         duration: 0, // Will be loaded asynchronously
-        id: undefined // Not saved to IndexedDB
+        id: undefined, // Not saved to IndexedDB
+        mediaType: mediaType
     };
-    
+
     // Load metadata (duration) asynchronously
-    const audio = new Audio(url);
-    audio.addEventListener('loadedmetadata', async () => {
-        playlistItem.duration = audio.duration;
+    const media = isVideo ? document.createElement('video') : new Audio();
+    media.src = url;
+    media.addEventListener('loadedmetadata', async () => {
+        playlistItem.duration = media.duration;
         updatePlaylistDisplay();
         // Save stream URL to IndexedDB after duration is loaded
         try {
-            const dbId = await saveFileToDB(null, url, audio.duration, url);
+            const dbId = await saveFileToDB(null, url, media.duration, url, mediaType);
             playlistItem.id = dbId;
         } catch (error) {
             console.error('Error saving stream URL to database:', error);
         }
     });
-    
-    // Handle errors (CORS, invalid audio, etc.)
-    audio.addEventListener('error', async (e) => {
+
+    // Handle errors (CORS, invalid media, etc.)
+    media.addEventListener('error', async (e) => {
         console.error('Error loading stream URL:', e);
         // Still add to playlist, but duration will remain 0
         updatePlaylistDisplay();
         // Save stream URL to IndexedDB even if duration couldn't be loaded
         try {
-            const dbId = await saveFileToDB(null, url, 0, url);
+            const dbId = await saveFileToDB(null, url, 0, url, mediaType);
             playlistItem.id = dbId;
         } catch (error) {
             console.error('Error saving stream URL to database:', error);
         }
     });
-    
-    // Preload the audio to trigger metadata loading
-    audio.load();
-    
+
+    // Preload the media to trigger metadata loading
+    media.load();
+
     playlistItems.push(playlistItem);
-    
+
     // Update display immediately
     updatePlaylistDisplay();
     savePlayerState();
-    
+
     // Auto-play first track only if no track is currently selected
     // Don't reload if a track is already playing
     if (currentTrackIndex === -1 && playlistItems.length > 0) {
@@ -340,7 +439,7 @@ function addStreamUrl(url) {
         loadTrack(currentTrackIndex);
     } else if (wasLoaded && wasPlaying) {
         // Restore playback state if a track was playing
-        audioPlayer.currentTime = currentTime;
+        currentPlayer.currentTime = currentTime;
         if (wasPlaying) {
             playTrack();
         }
@@ -358,38 +457,41 @@ async function handleFileSelection(event) {
     
     // Store the current playing state and time before adding files
     const wasPlaying = isPlaying;
-    const currentTime = audioPlayer.currentTime;
+    const currentTime = currentPlayer.currentTime;
     const wasLoaded = currentTrackIndex !== -1;
-    
+
     for (const file of files) {
         // Check file type - on mobile, file.type might be empty, so also check file extension
         // Based on MDN File API: https://developer.mozilla.org/en-US/docs/Web/API/File
-        const isAudioFile = file.type.startsWith('audio/') || 
-                           /\.(mp3|wav|ogg|aac|m4a|flac|webm|opus)$/i.test(file.name);
-        
-        if (isAudioFile) {
+        const isAudio = isAudioFile(file.type, file.name);
+        const isVideo = isVideoFile(file.type, file.name);
+
+        if (isAudio || isVideo) {
+            const mediaType = isVideo ? 'video' : 'audio';
             const url = URL.createObjectURL(file);
             const playlistItem = {
                 name: file.name,
                 file: file,
                 url: url,
-                duration: 0
+                duration: 0,
+                mediaType: mediaType
             };
-            
+
             // Get duration
-            const audio = new Audio(url);
-            audio.addEventListener('loadedmetadata', async () => {
-                playlistItem.duration = audio.duration;
+            const media = isVideo ? document.createElement('video') : new Audio();
+            media.src = url;
+            media.addEventListener('loadedmetadata', async () => {
+                playlistItem.duration = media.duration;
                 updatePlaylistDisplay();
                 // Save file to IndexedDB after duration is loaded
                 try {
-                    const dbId = await saveFileToDB(file, file.name, audio.duration);
+                    const dbId = await saveFileToDB(file, file.name, media.duration, null, mediaType);
                     playlistItem.id = dbId;
                 } catch (error) {
                     console.error('Error saving file to database:', error);
                 }
             });
-            
+
             playlistItems.push(playlistItem);
         }
     }
@@ -405,7 +507,7 @@ async function handleFileSelection(event) {
         loadTrack(0);
     } else if (wasLoaded && wasPlaying) {
         // Restore playback state if a track was playing
-        audioPlayer.currentTime = currentTime;
+        currentPlayer.currentTime = currentTime;
         if (wasPlaying) {
             playTrack();
         }
@@ -434,10 +536,12 @@ function updatePlaylistDisplay() {
         if (index === currentTrackIndex) {
             playlistItem.classList.add('active');
         }
-        
+
+        const mediaIcon = item.mediaType === 'video' ? '🎬' : '🎵';
+
         playlistItem.innerHTML = `
             <span class="playlist-item-number">${index + 1}</span>
-            <span class="playlist-item-name">${item.name}</span>
+            <span class="playlist-item-name">${mediaIcon} ${item.name}</span>
             <span class="playlist-item-duration">${formatTime(item.duration)}</span>
             <button class="delete-btn" title="Delete">🗑️</button>
         `;
@@ -490,6 +594,8 @@ async function deletePlaylistItem(index) {
         if (playlistItems.length === 0) {
             currentTrackIndex = -1;
             audioPlayer.src = '';
+            videoPlayer.src = '';
+            videoContainer.style.display = 'none';
             trackTitle.textContent = 'No track selected';
             trackTime.textContent = '00:00 / 00:00';
             progressBar.value = 0;
@@ -526,33 +632,50 @@ function formatTime(seconds) {
 // Track loading and playback
 function loadTrack(index) {
     if (index < 0 || index >= playlistItems.length) return;
-    
+
     currentTrackIndex = index;
     const track = playlistItems[index];
-    
-    audioPlayer.src = track.url;
+
+    // Pause and reset both players
+    audioPlayer.pause();
+    videoPlayer.pause();
+
+    // Determine which player to use
+    if (track.mediaType === 'video') {
+        // Switch to video player
+        currentPlayer = videoPlayer;
+        videoPlayer.src = track.url;
+        videoPlayer.volume = audioPlayer.volume; // Sync volume
+        videoContainer.style.display = 'flex';
+        videoPlayer.load();
+    } else {
+        // Switch to audio player
+        currentPlayer = audioPlayer;
+        audioPlayer.src = track.url;
+        videoContainer.style.display = 'none';
+        audioPlayer.load();
+    }
+
     trackTitle.textContent = track.name;
     updatePlaylistDisplay();
-    
-    audioPlayer.load();
     savePlayerState();
 }
 
 function playTrack() {
     if (currentTrackIndex === -1 || playlistItems.length === 0) return;
-    
-    audioPlayer.play()
+
+    currentPlayer.play()
         .then(() => {
             isPlaying = true;
             playPauseIcon.textContent = '⏸';
         })
         .catch(error => {
-            console.error('Error playing audio:', error);
+            console.error('Error playing media:', error);
         });
 }
 
 function pauseTrack() {
-    audioPlayer.pause();
+    currentPlayer.pause();
     isPlaying = false;
     playPauseIcon.textContent = '▶';
 }
@@ -624,11 +747,12 @@ function handleNextTrack() {
 let lastSaveTime = 0;
 const SAVE_INTERVAL = 2000; // Save every 2 seconds
 
-audioPlayer.addEventListener('timeupdate', () => {
-    if (audioPlayer.duration) {
-        const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+// Helper function to update time display
+function updateTimeDisplay() {
+    if (currentPlayer.duration) {
+        const progress = (currentPlayer.currentTime / currentPlayer.duration) * 100;
         progressBar.value = progress;
-        trackTime.textContent = `${formatTime(audioPlayer.currentTime)} / ${formatTime(audioPlayer.duration)}`;
+        trackTime.textContent = `${formatTime(currentPlayer.currentTime)} / ${formatTime(currentPlayer.duration)}`;
     }
     // Save state periodically
     const now = Date.now();
@@ -636,19 +760,24 @@ audioPlayer.addEventListener('timeupdate', () => {
         savePlayerState();
         lastSaveTime = now;
     }
-});
+}
+
+// Attach timeupdate to both players
+audioPlayer.addEventListener('timeupdate', updateTimeDisplay);
+videoPlayer.addEventListener('timeupdate', updateTimeDisplay);
 
 progressBar.addEventListener('input', () => {
-    if (audioPlayer.duration) {
-        const seekTime = (progressBar.value / 100) * audioPlayer.duration;
-        audioPlayer.currentTime = seekTime;
+    if (currentPlayer.duration) {
+        const seekTime = (progressBar.value / 100) * currentPlayer.duration;
+        currentPlayer.currentTime = seekTime;
     }
 });
 
-// Volume control
+// Volume control - sync both players
 volumeSlider.addEventListener('input', () => {
     const volume = volumeSlider.value / 100;
     audioPlayer.volume = volume;
+    videoPlayer.volume = volume;
     volumeValue.textContent = `${volumeSlider.value}%`;
     savePlayerState();
 });
@@ -718,27 +847,72 @@ repeatBtn.addEventListener('click', () => {
     savePlayerState();
 });
 
-// Audio player events
-audioPlayer.addEventListener('ended', () => {
+// Media player events
+function handleMediaEnded() {
     if (repeatMode === 'one') {
-        audioPlayer.currentTime = 0;
+        currentPlayer.currentTime = 0;
         playTrack();
     } else if (repeatMode === 'all') {
         handleNextTrack();
     } else {
         handleNextTrack();
     }
+}
+
+function handleMediaLoaded() {
+    progressBar.value = 0;
+    trackTime.textContent = `00:00 / ${formatTime(currentPlayer.duration)}`;
+}
+
+// Attach events to both players
+audioPlayer.addEventListener('ended', handleMediaEnded);
+videoPlayer.addEventListener('ended', handleMediaEnded);
+audioPlayer.addEventListener('loadedmetadata', handleMediaLoaded);
+videoPlayer.addEventListener('loadedmetadata', handleMediaLoaded);
+
+// Fullscreen functionality
+// Based on MDN Fullscreen API: https://developer.mozilla.org/en-US/docs/Web/API/Fullscreen_API
+fullscreenBtn.addEventListener('click', () => {
+    if (!document.fullscreenElement &&
+        !document.webkitFullscreenElement &&
+        !document.mozFullScreenElement) {
+        // Enter fullscreen
+        if (videoContainer.requestFullscreen) {
+            videoContainer.requestFullscreen();
+        } else if (videoContainer.webkitRequestFullscreen) {
+            videoContainer.webkitRequestFullscreen();
+        } else if (videoContainer.mozRequestFullScreen) {
+            videoContainer.mozRequestFullScreen();
+        }
+    } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+        }
+    }
 });
 
-audioPlayer.addEventListener('loadedmetadata', () => {
-    progressBar.value = 0;
-    trackTime.textContent = `00:00 / ${formatTime(audioPlayer.duration)}`;
-});
+// Update fullscreen button icon when fullscreen state changes
+document.addEventListener('fullscreenchange', updateFullscreenButton);
+document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+document.addEventListener('mozfullscreenchange', updateFullscreenButton);
+
+function updateFullscreenButton() {
+    const isFullscreen = document.fullscreenElement ||
+                        document.webkitFullscreenElement ||
+                        document.mozFullScreenElement;
+    fullscreenBtn.querySelector('span').textContent = isFullscreen ? '⛶' : '⛶';
+    fullscreenBtn.title = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen';
+}
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (event) => {
     if (event.target.tagName === 'INPUT') return;
-    
+
     switch(event.code) {
         case 'Space':
             event.preventDefault();
@@ -751,6 +925,13 @@ document.addEventListener('keydown', (event) => {
         case 'ArrowRight':
             event.preventDefault();
             nextBtn.click();
+            break;
+        case 'KeyF':
+            // Toggle fullscreen with 'F' key when video is playing
+            if (videoContainer.style.display !== 'none') {
+                event.preventDefault();
+                fullscreenBtn.click();
+            }
             break;
     }
 });

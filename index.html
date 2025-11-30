@@ -3,22 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio Media Player</title>
+    <title>Media Player</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Audio Media Player</h1>
+            <h1>Media Player</h1>
         </header>
 
         <div class="upload-section">
             <label for="file-input" class="upload-button">
                 <span>📁 Browse Files</span>
             </label>
-            <input type="file" id="file-input" multiple accept="audio/*" style="display: none;">
+            <input type="file" id="file-input" multiple accept="audio/*,video/*" style="display: none;">
             <button id="stream-btn" class="upload-button">
                 <span>📡 Stream</span>
+            </button>
+        </div>
+
+        <div id="video-container" class="video-container" style="display: none;">
+            <video id="video-player" class="video-player"></video>
+            <button id="fullscreen-btn" class="fullscreen-btn" title="Fullscreen">
+                <span>⛶</span>
             </button>
         </div>
 
@@ -60,17 +67,17 @@
         <div class="playlist-section">
             <h2>Playlist</h2>
             <div id="playlist" class="playlist">
-                <p class="empty-playlist">No files added yet. Click "Browse Files" to add audio files.</p>
+                <p class="empty-playlist">No files added yet. Click "Browse Files" to add media files.</p>
             </div>
         </div>
         <div class="disclaimer">
             <p><strong>Disclaimer:</strong><br>
-                This media player is only a tool for playing audio files and streams provided by the user. You are solely responsible for ensuring that the content you play is legal. The developer takes no responsibility for copyright violations or illegal use of external audio streams.
+                This media player is only a tool for playing audio and video files and streams provided by the user. You are solely responsible for ensuring that the content you play is legal. The developer takes no responsibility for copyright violations or illegal use of external media streams.
                 </p>
         </div>
     </div>
 
-    <audio id="audio-player"></audio>
+    <audio id="audio-player" style="display: none;"></audio>
 
     <script src="script.js"></script>
 </body>
