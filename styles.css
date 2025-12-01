@@ -106,6 +106,7 @@ header h1 {
     font-size: 1.5em;
     transition: all 0.2s;
     backdrop-filter: blur(5px);
+    z-index: 20;
 }
 
 .fullscreen-btn:hover {
@@ -145,6 +146,212 @@ header h1 {
     max-height: 100vh;
     width: 100%;
     height: 100%;
+}
+
+/* Fullscreen controls overlay */
+.fullscreen-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.6) 70%, transparent 100%);
+    padding: 40px 30px 20px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    z-index: 10;
+}
+
+.fullscreen-controls.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Show controls in fullscreen */
+.video-container:fullscreen .fullscreen-controls,
+.video-container:-webkit-full-screen .fullscreen-controls,
+.video-container:-moz-full-screen .fullscreen-controls {
+    display: block;
+}
+
+/* Hide controls when not in fullscreen */
+.video-container:not(:fullscreen) .fullscreen-controls,
+.video-container:not(:-webkit-full-screen) .fullscreen-controls,
+.video-container:not(:-moz-full-screen) .fullscreen-controls {
+    display: none;
+}
+
+.fullscreen-controls-content {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.fullscreen-time-info {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.fullscreen-time-info span {
+    color: white;
+    font-size: 1.1em;
+    font-weight: 500;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.fullscreen-progress-container {
+    margin-bottom: 20px;
+}
+
+#fullscreen-progress-bar {
+    width: 100%;
+    height: 10px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.3);
+    outline: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+}
+
+#fullscreen-progress-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#fullscreen-progress-bar::-webkit-slider-thumb:hover {
+    background: #764ba2;
+    transform: scale(1.2);
+}
+
+#fullscreen-progress-bar::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#fullscreen-progress-bar::-moz-range-thumb:hover {
+    background: #764ba2;
+    transform: scale(1.2);
+}
+
+.fullscreen-bottom-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+}
+
+.fullscreen-control-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    width: 55px;
+    height: 55px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 1.3em;
+    color: white;
+    backdrop-filter: blur(10px);
+}
+
+.fullscreen-control-btn:hover {
+    background: rgba(102, 126, 234, 0.8);
+    border-color: rgba(255, 255, 255, 0.6);
+    transform: scale(1.1);
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.6);
+}
+
+.fullscreen-control-btn.fullscreen-play-btn {
+    width: 65px;
+    height: 65px;
+    font-size: 1.6em;
+    background: rgba(102, 126, 234, 0.8);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.fullscreen-control-btn.fullscreen-play-btn:hover {
+    background: rgba(118, 75, 162, 0.9);
+    transform: scale(1.15);
+}
+
+.fullscreen-volume-control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.fullscreen-volume-control .volume-icon {
+    font-size: 1.3em;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+#fullscreen-volume-slider {
+    width: 150px;
+    height: 8px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.3);
+    outline: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+}
+
+#fullscreen-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#fullscreen-volume-slider::-webkit-slider-thumb:hover {
+    background: #764ba2;
+    transform: scale(1.2);
+}
+
+#fullscreen-volume-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#fullscreen-volume-slider::-moz-range-thumb:hover {
+    background: #764ba2;
+    transform: scale(1.2);
+}
+
+#fullscreen-volume-value {
+    min-width: 45px;
+    text-align: right;
+    font-size: 1em;
+    color: white;
+    font-weight: 500;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .player-section {
@@ -490,6 +697,34 @@ header h1 {
 
     .disclaimer p {
         font-size: 0.8em;
+    }
+
+    .fullscreen-control-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 1.2em;
+    }
+
+    .fullscreen-control-btn.fullscreen-play-btn {
+        width: 60px;
+        height: 60px;
+        font-size: 1.5em;
+    }
+
+    .fullscreen-bottom-controls {
+        gap: 10px;
+    }
+
+    #fullscreen-volume-slider {
+        width: 100px;
+    }
+
+    .fullscreen-volume-control .volume-icon {
+        font-size: 1.1em;
+    }
+
+    #fullscreen-volume-value {
+        font-size: 0.9em;
     }
 }
 

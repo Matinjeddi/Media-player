@@ -18,6 +18,17 @@ const nextBtn = document.getElementById('next-btn');
 const shuffleBtn = document.getElementById('shuffle-btn');
 const repeatBtn = document.getElementById('repeat-btn');
 
+// Fullscreen controls
+const fullscreenControls = document.getElementById('fullscreen-controls');
+const fullscreenProgressBar = document.getElementById('fullscreen-progress-bar');
+const fullscreenTrackTime = document.getElementById('fullscreen-track-time');
+const fullscreenPlayPauseBtn = document.getElementById('fullscreen-play-pause-btn');
+const fullscreenPlayPauseIcon = document.getElementById('fullscreen-play-pause-icon');
+const fullscreenPrevBtn = document.getElementById('fullscreen-prev-btn');
+const fullscreenNextBtn = document.getElementById('fullscreen-next-btn');
+const fullscreenVolumeSlider = document.getElementById('fullscreen-volume-slider');
+const fullscreenVolumeValue = document.getElementById('fullscreen-volume-value');
+
 // State management
 let playlistItems = [];
 let currentTrackIndex = -1;
@@ -241,22 +252,26 @@ function loadPlayerState() {
         const state = JSON.parse(saved);
         currentTrackIndex = state.currentTrackIndex || -1;
         audioPlayer.volume = state.volume !== undefined ? state.volume : 1.0;
+        videoPlayer.volume = state.volume !== undefined ? state.volume : 1.0;
         volumeSlider.value = (state.volume !== undefined ? state.volume : 1.0) * 100;
         volumeValue.textContent = `${Math.round(volumeSlider.value)}%`;
+        // Sync fullscreen volume slider
+        fullscreenVolumeSlider.value = volumeSlider.value;
+        fullscreenVolumeValue.textContent = `${Math.round(volumeSlider.value)}%`;
         isShuffleMode = state.isShuffleMode || false;
         repeatMode = state.repeatMode || 'off';
-        
+
         if (isShuffleMode) {
             shuffleBtn.classList.add('active');
         }
-        
+
         if (repeatMode === 'all') {
             repeatBtn.classList.add('active');
             repeatBtn.title = 'Repeat All';
         } else if (repeatMode === 'one') {
             repeatBtn.title = 'Repeat One';
         }
-        
+
         return state;
     }
     return null;
@@ -668,6 +683,7 @@ function playTrack() {
         .then(() => {
             isPlaying = true;
             playPauseIcon.textContent = '⏸';
+            fullscreenPlayPauseIcon.textContent = '⏸';
         })
         .catch(error => {
             console.error('Error playing media:', error);
@@ -678,6 +694,7 @@ function pauseTrack() {
     currentPlayer.pause();
     isPlaying = false;
     playPauseIcon.textContent = '▶';
+    fullscreenPlayPauseIcon.textContent = '▶';
 }
 
 // Playback controls
@@ -779,6 +796,9 @@ volumeSlider.addEventListener('input', () => {
     audioPlayer.volume = volume;
     videoPlayer.volume = volume;
     volumeValue.textContent = `${volumeSlider.value}%`;
+    // Sync with fullscreen volume slider
+    fullscreenVolumeSlider.value = volumeSlider.value;
+    fullscreenVolumeValue.textContent = `${volumeSlider.value}%`;
     savePlayerState();
 });
 
@@ -907,7 +927,157 @@ function updateFullscreenButton() {
                         document.mozFullScreenElement;
     fullscreenBtn.querySelector('span').textContent = isFullscreen ? '⛶' : '⛶';
     fullscreenBtn.title = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen';
+
+    // Show fullscreen controls when entering fullscreen
+    if (isFullscreen) {
+        showFullscreenControls();
+        startFullscreenControlsTimer();
+    }
 }
+
+// Fullscreen controls management
+let fullscreenControlsTimer = null;
+const FULLSCREEN_CONTROLS_TIMEOUT = 3000; // Hide after 3 seconds of inactivity
+
+function showFullscreenControls() {
+    fullscreenControls.classList.add('show');
+    videoContainer.style.cursor = 'default';
+}
+
+function hideFullscreenControls() {
+    const isFullscreen = document.fullscreenElement ||
+                        document.webkitFullscreenElement ||
+                        document.mozFullScreenElement;
+    if (isFullscreen && isPlaying) {
+        fullscreenControls.classList.remove('show');
+        videoContainer.style.cursor = 'none';
+    }
+}
+
+function startFullscreenControlsTimer() {
+    clearTimeout(fullscreenControlsTimer);
+    fullscreenControlsTimer = setTimeout(hideFullscreenControls, FULLSCREEN_CONTROLS_TIMEOUT);
+}
+
+function resetFullscreenControlsTimer() {
+    showFullscreenControls();
+    startFullscreenControlsTimer();
+}
+
+// Show controls on mouse movement in fullscreen
+videoContainer.addEventListener('mousemove', () => {
+    const isFullscreen = document.fullscreenElement ||
+                        document.webkitFullscreenElement ||
+                        document.mozFullScreenElement;
+    if (isFullscreen) {
+        resetFullscreenControlsTimer();
+    }
+});
+
+// Also show controls when mouse enters the controls area
+fullscreenControls.addEventListener('mouseenter', () => {
+    clearTimeout(fullscreenControlsTimer);
+    showFullscreenControls();
+});
+
+fullscreenControls.addEventListener('mouseleave', () => {
+    const isFullscreen = document.fullscreenElement ||
+                        document.webkitFullscreenElement ||
+                        document.mozFullScreenElement;
+    if (isFullscreen) {
+        startFullscreenControlsTimer();
+    }
+});
+
+// Fullscreen play/pause button
+fullscreenPlayPauseBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent triggering other click events
+    if (isPlaying) {
+        pauseTrack();
+    } else {
+        playTrack();
+    }
+    resetFullscreenControlsTimer();
+});
+
+// Fullscreen previous button
+fullscreenPrevBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (playlistItems.length === 0) return;
+
+    if (isShuffleMode) {
+        playRandomTrack();
+    } else {
+        let newIndex = currentTrackIndex - 1;
+        if (newIndex < 0) {
+            newIndex = playlistItems.length - 1;
+        }
+        currentTrackIndex = newIndex;
+        loadTrack(newIndex);
+        playTrack();
+    }
+    resetFullscreenControlsTimer();
+});
+
+// Fullscreen next button
+fullscreenNextBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (playlistItems.length === 0) return;
+
+    if (isShuffleMode) {
+        playRandomTrack();
+    } else {
+        handleNextTrack();
+    }
+    resetFullscreenControlsTimer();
+});
+
+// Fullscreen volume control
+fullscreenVolumeSlider.addEventListener('input', (e) => {
+    e.stopPropagation();
+    const volume = fullscreenVolumeSlider.value / 100;
+    audioPlayer.volume = volume;
+    videoPlayer.volume = volume;
+    fullscreenVolumeValue.textContent = `${fullscreenVolumeSlider.value}%`;
+    // Sync with main volume slider
+    volumeSlider.value = fullscreenVolumeSlider.value;
+    volumeValue.textContent = `${fullscreenVolumeSlider.value}%`;
+    savePlayerState();
+    resetFullscreenControlsTimer();
+});
+
+// Fullscreen progress bar
+fullscreenProgressBar.addEventListener('input', () => {
+    if (videoPlayer.duration) {
+        const seekTime = (fullscreenProgressBar.value / 100) * videoPlayer.duration;
+        videoPlayer.currentTime = seekTime;
+        resetFullscreenControlsTimer();
+    }
+});
+
+// Update fullscreen progress bar and time during video playback
+videoPlayer.addEventListener('timeupdate', () => {
+    if (videoPlayer.duration) {
+        const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+        fullscreenProgressBar.value = progress;
+        fullscreenTrackTime.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
+    }
+});
+
+// Click on video to toggle play/pause in fullscreen
+videoPlayer.addEventListener('click', () => {
+    const isFullscreen = document.fullscreenElement ||
+                        document.webkitFullscreenElement ||
+                        document.mozFullScreenElement;
+    if (isFullscreen) {
+        if (isPlaying) {
+            pauseTrack();
+        } else {
+            playTrack();
+        }
+        resetFullscreenControlsTimer();
+    }
+});
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (event) => {

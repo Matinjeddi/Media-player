@@ -27,6 +27,34 @@
             <button id="fullscreen-btn" class="fullscreen-btn" title="Fullscreen">
                 <span>⛶</span>
             </button>
+
+            <!-- Fullscreen controls overlay -->
+            <div id="fullscreen-controls" class="fullscreen-controls">
+                <div class="fullscreen-controls-content">
+                    <div class="fullscreen-time-info">
+                        <span id="fullscreen-track-time">00:00 / 00:00</span>
+                    </div>
+                    <div class="fullscreen-progress-container">
+                        <input type="range" id="fullscreen-progress-bar" min="0" max="100" value="0" step="0.1">
+                    </div>
+                    <div class="fullscreen-bottom-controls">
+                        <button id="fullscreen-prev-btn" class="fullscreen-control-btn" title="Previous">
+                            <span>⏮</span>
+                        </button>
+                        <button id="fullscreen-play-pause-btn" class="fullscreen-control-btn fullscreen-play-btn" title="Play/Pause">
+                            <span id="fullscreen-play-pause-icon">▶</span>
+                        </button>
+                        <button id="fullscreen-next-btn" class="fullscreen-control-btn" title="Next">
+                            <span>⏭</span>
+                        </button>
+                    </div>
+                    <div class="fullscreen-volume-control">
+                        <span class="volume-icon">🔊</span>
+                        <input type="range" id="fullscreen-volume-slider" min="0" max="100" value="100" step="1">
+                        <span id="fullscreen-volume-value">100%</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="player-section">
