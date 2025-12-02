@@ -638,7 +638,7 @@ async function deletePlaylistItem(index) {
 }
 
 function formatTime(seconds) {
-    if (isNaN(seconds) || seconds === 0) return '00:00';
+    if (isNaN(seconds) || seconds === 0 || !isFinite(seconds)) return '0:00:00';
 
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -774,9 +774,16 @@ const SAVE_INTERVAL = 2000; // Save every 2 seconds
 // Helper function to update time display
 function updateTimeDisplay() {
     if (currentPlayer.duration) {
-        const progress = (currentPlayer.currentTime / currentPlayer.duration) * 100;
-        progressBar.value = progress;
-        trackTime.textContent = `${formatTime(currentPlayer.currentTime)} / ${formatTime(currentPlayer.duration)}`;
+        // Check if duration is finite (not Infinity for streams)
+        if (isFinite(currentPlayer.duration)) {
+            const progress = (currentPlayer.currentTime / currentPlayer.duration) * 100;
+            progressBar.value = progress;
+            trackTime.textContent = `${formatTime(currentPlayer.currentTime)} / ${formatTime(currentPlayer.duration)}`;
+        } else {
+            // For streams with unknown duration, just show elapsed time
+            progressBar.value = 0;
+            trackTime.textContent = formatTime(currentPlayer.currentTime);
+        }
     }
     // Save state periodically
     const now = Date.now();
@@ -888,7 +895,12 @@ function handleMediaEnded() {
 
 function handleMediaLoaded() {
     progressBar.value = 0;
-    trackTime.textContent = `00:00 / ${formatTime(currentPlayer.duration)}`;
+    if (isFinite(currentPlayer.duration)) {
+        trackTime.textContent = `0:00:00 / ${formatTime(currentPlayer.duration)}`;
+    } else {
+        // For streams with unknown duration, just show starting time
+        trackTime.textContent = '0:00:00';
+    }
 }
 
 // Attach events to both players
@@ -1065,9 +1077,16 @@ fullscreenProgressBar.addEventListener('input', () => {
 // Update fullscreen progress bar and time during video playback
 videoPlayer.addEventListener('timeupdate', () => {
     if (videoPlayer.duration) {
-        const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
-        fullscreenProgressBar.value = progress;
-        fullscreenTrackTime.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
+        // Check if duration is finite (not Infinity for streams)
+        if (isFinite(videoPlayer.duration)) {
+            const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+            fullscreenProgressBar.value = progress;
+            fullscreenTrackTime.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
+        } else {
+            // For streams with unknown duration, just show elapsed time
+            fullscreenProgressBar.value = 0;
+            fullscreenTrackTime.textContent = formatTime(videoPlayer.currentTime);
+        }
     }
 });
 
