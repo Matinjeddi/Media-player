@@ -557,7 +557,7 @@ function updatePlaylistDisplay() {
         playlistItem.innerHTML = `
             <span class="playlist-item-number">${index + 1}</span>
             <span class="playlist-item-name">${mediaIcon} ${item.name}</span>
-            <span class="playlist-item-duration">${formatTime(item.duration)}</span>
+            <span class="playlist-item-duration">${item.file === null && item.duration === 0 ? 'Infinity' : formatTime(item.duration)}</span>
             <button class="delete-btn" title="Delete">🗑️</button>
         `;
         
@@ -638,7 +638,7 @@ async function deletePlaylistItem(index) {
 }
 
 function formatTime(seconds) {
-    if (isNaN(seconds) || seconds === 0 || !isFinite(seconds)) return '0:00:00';
+    if (isNaN(seconds) || seconds === 0 || !isFinite(seconds)) return 'Infinity';
 
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -899,7 +899,7 @@ function handleMediaLoaded() {
         trackTime.textContent = `0:00:00 / ${formatTime(currentPlayer.duration)}`;
     } else {
         // For streams with unknown duration, just show starting time
-        trackTime.textContent = '0:00:00';
+        trackTime.textContent = 'Infinity';
     }
 }
 
